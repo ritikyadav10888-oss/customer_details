@@ -313,12 +313,23 @@ async function appendToGoogleSheet(bookings: Booking[]) {
       return;
     }
 
-    const auth = new google.auth.GoogleAuth({
-      keyFile: credentialsPath,
-      scopes: ['https://www.googleapis.com/auth/spreadsheets'],
-    });
+    // Vercel Compatibility: Use env variable if JSON file is missing
+    let auth;
+    if (fs.existsSync(credentialsPath)) {
+      auth = new google.auth.GoogleAuth({
+        keyFile: credentialsPath,
+        scopes: ['https://www.googleapis.com/auth/spreadsheets'],
+      });
+    } else if (process.env.GOOGLE_SERVICE_ACCOUNT_JSON) {
+      auth = new google.auth.GoogleAuth({
+        credentials: JSON.parse(process.env.GOOGLE_SERVICE_ACCOUNT_JSON),
+        scopes: ['https://www.googleapis.com/auth/spreadsheets'],
+      });
+    } else {
+      console.warn("⚠️ No Google credentials found (JSON file or ENV). Skipping sync.");
+      return;
+    }
 
-    console.log("🔄 Authenticating with Google...");
     const client = await auth.getClient();
     const sheets = google.sheets({ version: 'v4', auth: client as any });
 
