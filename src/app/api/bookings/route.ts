@@ -284,19 +284,37 @@ function getBookings(): Booking[] {
 
     // 2. Fallback to dynamic Excel only if CSV is missing
     const dynamicBookings = getBookingsFromDynamicExcel();
-    if (dynamicBookings.length > 0) return dynamicBookings;
-
-    // 3. Fallback to local JSON
-    if (fs.existsSync(dataFilePath)) {
-      const fileData = fs.readFileSync(dataFilePath, 'utf8');
-      return JSON.parse(fileData);
-    } else {
-      fs.writeFileSync(dataFilePath, JSON.stringify(dummyBookings, null, 2));
+async function getBookings(): Promise<Booking[]> {
+  try {
+    // Skip local file reading on Vercel if possible
+    if (process.env.VERCEL && !fs.existsSync(dataFilePath)) {
       return dummyBookings;
     }
+    
+    if (!fs.existsSync(dataFilePath)) {
+      return dummyBookings;
+    }
+    const data = await fs.promises.readFile(dataFilePath, 'utf-8');
+    return JSON.parse(data);
   } catch (error) {
-    console.error("Error reading bookings data:", error);
+    console.error("Error reading local bookings data:", error);
     return dummyBookings;
+  }
+}
+
+async function saveBooking(booking: Booking) {
+  try {
+    const bookings = await getBookings();
+    bookings.push(booking);
+    
+    // Only write to local file if NOT on Vercel
+    if (!process.env.VERCEL) {
+      await fs.promises.writeFile(dataFilePath, JSON.stringify(bookings, null, 2));
+    } else {
+      console.log("📝 Running on Vercel: Skipping local file write.");
+    }
+  } catch (error) {
+    console.error("Error saving local booking data:", error);
   }
 }
 
