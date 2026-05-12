@@ -440,49 +440,76 @@ async function getBookingsFromSheet(): Promise<Booking[]> {
     const client = await auth.getClient();
     const sheets = google.sheets({ version: 'v4', auth: client as any });
 
-    const response = await sheets.spreadsheets.values.get({
+    // 1. Fetch from 'Master Data'
+    const masterResponse = await sheets.spreadsheets.values.get({
       spreadsheetId: SPREADSHEET_ID,
       range: 'Master Data!A2:M',
     });
 
-    const rows = response.data.values;
-    if (!rows || rows.length === 0) return [];
+    // 2. Fetch from 'staff_data'
+    const staffResponse = await sheets.spreadsheets.values.get({
+      spreadsheetId: SPREADSHEET_ID,
+      range: 'staff_data!A2:L',
+    });
+
+    const masterRows = masterResponse.data.values || [];
+    const staffRows = staffResponse.data.values || [];
+
+    if (masterRows.length === 0 && staffRows.length === 0) {
+      console.log("Empty sheets, showing fallback data.");
+      return getBookings();
+    }
 
     function excelDateToJSDate(serial: any) {
       if (!serial) return "";
-      
-      // If it already looks like a date string (YYYY-MM-DD or DD-MM-YYYY), don't convert
-      if (typeof serial === 'string' && (serial.includes('-') || serial.includes('/'))) {
-        return serial;
-      }
-
+      if (typeof serial === 'string' && (serial.includes('-') || serial.includes('/'))) return serial;
       const s = parseFloat(serial);
-      if (isNaN(s) || s < 25569) return serial; // 25569 is 1970-01-01
-      
-      // Excel serial date to JS date
+      if (isNaN(s) || s < 25569) return serial;
       const date = new Date(Math.round((s - 25569) * 86400 * 1000));
       return date.toISOString().split('T')[0];
     }
 
-    return rows.map(row => {
+    const masterBookings: Booking[] = masterRows.map((row, i) => {
       const date = excelDateToJSDate(row[1]);
       return {
-        id: row[0],
+        id: row[0] || `m-${i}`,
         date: date,
-        customerName: row[2],
-        phoneNumber: row[3],
-        bookingPlatform: row[4] as any,
-        platformName: row[5],
-        venue: row[6] as any,
-        sports: [row[7]],
-        courtNumbers: (row[8] || "").split(', '),
-        startTime: row[9],
-        endTime: row[10],
+        customerName: row[2] || 'Unknown',
+        phoneNumber: row[3] || '',
+        bookingPlatform: (row[4] || 'Offline') as any,
+        platformName: row[5] || 'Excel',
+        venue: (row[6] || 'Borivali') as any,
+        sports: [row[7] || 'Cricket'],
+        courtNumbers: (row[8] || "").split(', ').filter(Boolean),
+        startTime: row[9] || '',
+        endTime: row[10] || '',
         hours: parseFloat(row[11] || "0"),
         price: parseFloat(row[12] || "0"),
         timestamp: new Date(date).toISOString(),
       };
     });
+
+    const staffBookings: Booking[] = staffRows.map((row, i) => {
+      const date = excelDateToJSDate(row[0]);
+      return {
+        id: `s-${i}-${Date.now()}`,
+        date: date,
+        customerName: row[1] || 'Unknown',
+        phoneNumber: row[2] || '',
+        bookingPlatform: 'Offline',
+        platformName: 'Staff Portal',
+        venue: (row[3] || 'Borivali') as any,
+        sports: [row[4] || 'Cricket'],
+        courtNumbers: (row[5] || "").split(', ').filter(Boolean),
+        startTime: row[6] || '',
+        endTime: row[7] || '',
+        hours: parseFloat(row[8] || "0"),
+        price: parseFloat(row[9] || "0"),
+        timestamp: new Date(date).toISOString(),
+      };
+    });
+
+    return [...staffBookings, ...masterBookings];
   } catch (error) {
     console.error("Error reading from sheet, falling back to local:", error);
     return getBookings();
