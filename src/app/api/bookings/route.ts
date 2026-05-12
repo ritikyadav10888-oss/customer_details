@@ -421,10 +421,22 @@ async function appendToGoogleSheet(bookings: Booking[]) {
 
 async function getBookingsFromSheet(): Promise<Booking[]> {
   try {
-    const auth = new google.auth.GoogleAuth({
-      keyFile: credentialsPath,
-      scopes: ['https://www.googleapis.com/auth/spreadsheets.readonly'],
-    });
+    let auth;
+    if (fs.existsSync(credentialsPath)) {
+      auth = new google.auth.GoogleAuth({
+        keyFile: credentialsPath,
+        scopes: ['https://www.googleapis.com/auth/spreadsheets.readonly'],
+      });
+    } else if (process.env.GOOGLE_SERVICE_ACCOUNT_JSON) {
+      auth = new google.auth.GoogleAuth({
+        credentials: JSON.parse(process.env.GOOGLE_SERVICE_ACCOUNT_JSON),
+        scopes: ['https://www.googleapis.com/auth/spreadsheets.readonly'],
+      });
+    } else {
+      console.warn("⚠️ No Google credentials found. Falling back to local data.");
+      return getBookings();
+    }
+
     const client = await auth.getClient();
     const sheets = google.sheets({ version: 'v4', auth: client as any });
 
